@@ -6,7 +6,6 @@ from datetime import date
 from datetime import datetime
 from datetime import timedelta
 
-from os.path import exists as file_exists
 import os
 from openpyxl import load_workbook
 
@@ -18,9 +17,6 @@ in_file = {
     'sheet_name': "Open_orders_A101",
     'stock_sheet': "MBEW_A101",
     # 'stock_sheet': "A101_Stock",
-    # 'SO_exceptions': "on_hold", # list of orders that are not urgent
-    # 'SO_comments': 'SO_comments', # comments already given to promote SO
-    # 'confirmations_SheetName': "Confirmations", # tracking of confirmations
     'PL40_Prio_List': 'Prio_List_PL40'
 }
 
@@ -33,52 +29,53 @@ confirmation_file = {
 }
 
 
-def read_in_file(file:str, folder=file_folder, in_SheetName='', header_row=2):
+def read_in_file(file: str, folder=file_folder, in_SheetName='', header_row=2):
     in_file = os.path.join(folder, file)
     print(in_file)
 
     try:
-        wb = pd.read_excel(in_file, sheet_name=None, header=None)
-        print('1')
-        sheets = list(wb.keys())
-        if in_SheetName == '':
-            print("Loading last sheet in file")
-#             df = pd.read_excel(in_file, sheet_name = -1, header = header_row)
-            df = wb.get(sheets[-1])
-        else:
-            #             df = pd.read_excel(in_file, in_SheetName, header = header_row)
-            df = wb.get(in_SheetName)
-
-        del (wb)
-
-    except TypeError:
         wb = load_workbook(filename=in_file, data_only=True)
-        print('2')
 
         if in_SheetName == '':
             print("Loading last sheet in file")
-#             wb = load_workbook(filename = in_file, data_only = True)
             df = pd.DataFrame(wb[wb.sheetnames[-1]].values)
 
         else:
-            #             wb = load_workbook(filename = in_file, data_only = True)
             df = pd.DataFrame(wb[in_SheetName].values)
 
         sheets = wb.sheetnames
         wb.close()
 
+        column_names = rename_columns(df.iloc[header_row].values)
+        df.columns = column_names
+        df.drop(index=list(np.arange(header_row+1)), inplace=True)
+        df.reset_index(drop=True, inplace=True)
+
+    except ValueError:
+        # wb = pd.read_excel(in_file, sheet_name=-1)#, header=None)
+
+        # sheets = list(wb.keys())
+        if in_SheetName == '':
+            print("Loading last sheet in file")
+            df = pd.read_excel(in_file, sheet_name=-1, header=header_row)
+            # df = wb.get(sheets[-1])
+        else:
+            df = pd.read_excel(in_file, in_SheetName, header=header_row)
+            # df = wb.get(in_SheetName)
+
+        column_names = rename_columns(df.columns.values)
+        df.columns = column_names
+        sheets = []
+
+        # del (wb)
+
     except FileNotFoundError:
         df = pd.DataFrame()
         print(f'File {in_file} not found')
 
-    # except Exception as Err:
-    #     print("oops!")
-    #     print(Err)
-
-    column_names = rename_columns(df.iloc[header_row].values)
-    df.columns = column_names
-    df.drop(index=list(np.arange(header_row+1)), inplace=True)
-    df.reset_index(drop=True, inplace=True)
+    except Exception as Err:
+        print(Err)
+        os._exit(1)
 
     return df, sheets
 
@@ -91,11 +88,11 @@ def rename_columns(column_names):
             column_names[item[0]] = item[1]
     return column_names
 
-# print(file_exists(os.path.join(file_folder, in_file['file'])))
 
-
-df, sheets = read_in_file(file=in_file['file'], folder=file_folder, in_SheetName=in_file['sheet_name'], header_row=2)
-df_a101, _ = read_in_file(file=in_file['file'], folder=file_folder, in_SheetName=in_file['stock_sheet'], header_row=1)
+df, sheets = read_in_file(
+    file=in_file['file'], folder=file_folder, in_SheetName=in_file['sheet_name'], header_row=2)
+df_a101, _ = read_in_file(
+    file=in_file['file'], folder=file_folder, in_SheetName=in_file['stock_sheet'], header_row=1)
 print(sheets)
 
 df = df.convert_dtypes()
@@ -133,50 +130,34 @@ df_cur_conf = df_cur_conf.sort_values(
     by=['item_index', 'Confirmed_Date'], ascending=[True, True])
 cur_conf_col = 'Confirmation_' + df_cur_conf['Created_on'].max()
 
+# def test(base_date, comparision_date):
+#     '''
+#     take:
+#     base_date - requested date
+#     comparision_date - confirmed date
+#     returns:
+#     is_overdue -
+#     adj_base_date - base_date changed to nearest thursday in future
+#     '''
+#     base_date = pd.to_datetime(
+#         base_date, yearfirst=True, errors='coerce').dt.date
+#     comparision_date = pd.to_datetime(
+#         comparision_date, yearfirst=True, errors='coerce').dt.date
 
-def adj_requested_date(date_str):
-    '''returns next thursday from given date'''
-    parts = date_str if isinstance(
-        date_str, date) else datetime.strptime(date_str, '%Y.%m.%d')
-    delta = 4-parts.isoweekday() if parts.isoweekday() <= 4 else 7+4-parts.isoweekday()
+#     adj_base_date = base_date.apply(lambda x:
+#                                     4-x.isoweekday() if x.isoweekday() <= 4 else 7+4-x.isoweekday())
+# #     adj_base_date = base_date + pd.Timedelta(adj_base_date, unit='d')
+#     adj_base_date = base_date + \
+#         adj_base_date.apply(lambda x: pd.Timedelta(x, unit='d'))
+# #     delta = 4-base_date.isoweekday() if base_date.isoweekday()<=4 else 7+4-base_date.isoweekday()
+# #     adj_base_date = base_date+timedelta(days=delta)
 
-#     if past:
-#         delta -=7
+#     is_overdue = comparision_date > adj_base_date
 
-    parts = parts+timedelta(days=delta)
-    parts = parts.strftime('%Y.%m.%d')
+# #     adj_base_date = adj_base_date.dt.strftime('%Y.%m.%d')
+# #     adj_base_date = adj_base_date.strftime('%Y.%m.%d')
 
-    return parts
-
-
-def test(base_date, comparision_date):
-    '''
-    take:
-    base_date - requested date
-    comparision_date - confirmed date
-    returns:
-    is_overdue - 
-    adj_base_date - base_date changed to nearest thursday in future
-    '''
-    base_date = pd.to_datetime(
-        base_date, yearfirst=True, errors='coerce').dt.date
-    comparision_date = pd.to_datetime(
-        comparision_date, yearfirst=True, errors='coerce').dt.date
-
-    adj_base_date = base_date.apply(lambda x:
-                                    4-x.isoweekday() if x.isoweekday() <= 4 else 7+4-x.isoweekday())
-#     adj_base_date = base_date + pd.Timedelta(adj_base_date, unit='d')
-    adj_base_date = base_date + \
-        adj_base_date.apply(lambda x: pd.Timedelta(x, unit='d'))
-#     delta = 4-base_date.isoweekday() if base_date.isoweekday()<=4 else 7+4-base_date.isoweekday()
-#     adj_base_date = base_date+timedelta(days=delta)
-
-    is_overdue = comparision_date > adj_base_date
-
-#     adj_base_date = adj_base_date.dt.strftime('%Y.%m.%d')
-#     adj_base_date = adj_base_date.strftime('%Y.%m.%d')
-
-    return is_overdue, adj_base_date
+#     return is_overdue, adj_base_date
 
 
 df_cur_conf[cur_conf_col] = df_cur_conf['Confirmed_Date'].astype('str') + \
@@ -216,27 +197,404 @@ def columns_to_drop(df, start_index=0, pattern='Confirmation_'):
     return drop_list
 
 
-# df_conf, sheets = read_in_file(file=confirmation_file['file'], folder=file_folder, header_row=0)
-# # print (sheets)
+df_conf, sheets = read_in_file(
+    file=confirmation_file['file'], folder=file_folder, header_row=0)
+# print (sheets)
 
-# if df_conf.size == 0:
-#     file = os.path.join(file_folder, confirmation_file['file'])
+if df_conf.size == 0:
+    file = os.path.join(file_folder, confirmation_file['file'])
 
-#     with pd.ExcelWriter(file, mode='w') as writer:
-#         print(f"Creating new {confirmation_file['file']} file\n")
-#         df_cur_conf.to_excel(writer, sheet_name=cur_conf_col, index=False)
-#         writer.save()
-# else:
-#     df_conf.set_index('item_index', drop=True, inplace=True)
-# #     df_conf.pop('changed')
+    with pd.ExcelWriter(file, mode='w') as writer:
+        print(f"Creating new {confirmation_file['file']} file\n")
+        df_cur_conf.to_excel(writer, sheet_name=cur_conf_col, index=False)
+        writer.save()
+else:
+    df_conf.set_index('item_index', drop=True, inplace=True)
+#     df_conf.pop('changed')
 
-#     df_conf = df_conf.drop(columns=columns_to_drop(
-#         df_conf, start_index=1, pattern='Confirmation_'))
+    df_conf = df_conf.drop(columns=columns_to_drop(
+        df_conf, start_index=1, pattern='Confirmation_'))
 
-# # check if column with current date already exists and replace it
-# if cur_conf_col in df_conf.columns:
-#     print(
-#         f'\ncolumn {cur_conf_col} exists in file {confirmation_file}. Replacing it with new data')
-#     df_conf.pop(cur_conf_col)
+# check if column with current date already exists and replace it
+if cur_conf_col in df_conf.columns:
+    print(
+        f'\ncolumn {cur_conf_col} exists in file {confirmation_file}. Replacing it with new data')
+    df_conf.pop(cur_conf_col)
 
 # print(df_conf.head())
+
+
+def adj_requested_date(date_str):
+    '''returns next thursday from given date'''
+    parts = date_str if isinstance(
+        date_str, date) else datetime.strptime(date_str, '%Y.%m.%d')
+    delta = 4-parts.isoweekday() if parts.isoweekday() <= 4 else 7+4-parts.isoweekday()
+
+#     if past:
+#         delta -=7
+
+    parts = parts+timedelta(days=delta)
+    parts = parts.strftime('%Y.%m.%d')
+
+    return parts
+
+# not finished 09.02.24
+def focus_records(df):
+    '''mark records of highest focus'''
+
+    df_working = df.copy()
+    # before = df_working.shape
+    df_working = df_working.drop_duplicates()
+    # after = df_working.shape
+    # if after != before:
+    #     print(before, after, df_working['SO_Mat_index'].drop_duplicates())
+
+    insert_index = len(columns_to_drop(
+        df_working, start_index=0, pattern='Confirmation_'))
+
+    df_working['Focus'] = ''
+#     df_working['Previous_confirmation'] = df_working[df_working.columns[insert_index+1]].apply(
+#         lambda x: x if pd.isna(x) else x.split('_')[0])
+    df_working[['Prev_conf_date', 'Prev_conf_qty']] = df_working[df_working.columns[insert_index+1]].apply(
+        lambda x: pd.Series([None, 0]) if pd.isna(x) else pd.Series(x.split('_')))
+    df_working['Prev_conf_qty'] = df_working['Prev_conf_qty'].apply(
+        lambda x: int(x.split('/')[0]) if x else 0)
+    df_working['Order_qty'] = df_working[df_working.columns[insert_index]].apply(
+        lambda x: int(x.split('/')[1]) if x else 0)
+
+#     if latest confirmation is fully equal to previous date_qty/order_qty
+    df_working['changed'] = df_working[df_working.columns[insert_index]
+                                       ] != df_working[df_working.columns[insert_index+1]]
+
+    df_working.reset_index(inplace=True, drop=True)
+
+    unchanged_record = df_working[df_working['changed'] ==
+                                  False].iloc[:, insert_index].drop_duplicates().values
+    # all current confirmations
+    cur_confirmations = df_working.iloc[:,
+                                        insert_index].drop_duplicates().values
+
+    df_working.drop(df_working[df_working['changed'] == True
+                               & df_working.iloc[:, insert_index].isin(unchanged_record)].index, inplace=True)
+    df_working.drop(df_working[df_working['changed'] == True
+                               & df_working.iloc[:, insert_index+1].isin(unchanged_record)].index, inplace=True)
+# if chanded both - dates and qty - select what to keep
+    if df_working['Order_qty'].max() != df_working['Confirmed_Quantity'].sum():
+        x = abs(df_working['Confirmed_Quantity'] -
+                df_working['Prev_conf_qty']).min()
+        df_working.drop(df_working[abs(
+            df_working['Confirmed_Quantity'] - df_working['Prev_conf_qty']) > x].index, inplace=True)
+
+#     df_working.drop_duplicates(df_working.columns[:insert_index+1], inplace = True)
+#     cur_qty = df_working.drop_duplicates(df_working.columns[:insert_index+1])['Confirmed_Quantity'].sum()
+#     prev_qty = df_working.drop_duplicates(df_working.columns[:insert_index].append(df_working.columns[insert_index+1:insert_index+2]))['Prev_conf_qty'].sum()
+
+#     if cur_qty != prev_qty:
+#         df_working['Focus'] += 'QTY_change, '
+
+    # orders without previous confirmation are considered 'not changed'
+    df_working.loc[df_working.iloc[:, insert_index+1].isnull(),
+                   'changed'] = False
+
+    df_working['improved'] = df_working['Confirmed_Date'] < df_working['Prev_conf_date']
+    df_working.fillna({'improved': True}, inplace=True)
+#     ddf.insert(insert_index, 'improved', ddf[ddf.columns[insert_index+1]].apply(
+#     lambda x: x if pd.isna(x) else x.split('_')[0]) <
+#            ddf[ddf.columns[insert_index+3]].apply(lambda x: x if pd.isna(x) else x.split('_')[0]))
+
+    df_working['Adj_Requested_Date'] = df_working['Requested_Date'].apply(
+        adj_requested_date)
+    df_working['overdue'] = df_working['Confirmed_Date'] > df_working['Adj_Requested_Date']
+
+    df_working['Next_delivery'] = adj_requested_date(date.today())
+    df_working['Next_delivery'] = df_working['Confirmed_Date'] == df_working['Next_delivery']
+
+    #     UBC Group
+    df_working.loc[
+        (df_working['Next_delivery'] == False)
+        & (df_working['overdue'] == True)
+        & (
+            (df_working['Sold-To_Party_text'] == 'PSC "Ukpostach"')
+            | (df_working['Sold-To_Party_text'] == 'LLC "Green Cool"')),
+        ['Focus']] += 'UBC_overdue, '
+
+    df_working.drop(labels=['Adj_Requested_Date',
+                    'Next_delivery'], axis=1, inplace=True)
+
+    col = list(df_working.columns)
+    col = col[:insert_index] + \
+        col[len(df.columns):] + col[insert_index:len(df.columns)]
+    df_working = df_working[col]
+
+    return df_working
+# check confirmation changes
+items = df_cur_conf['item_index'].drop_duplicates().reset_index(drop=True)
+
+# insert_index = len(columns_to_drop(df_cur_conf, start_index = 0, pattern='overdue'))
+insert_index = len(columns_to_drop(
+    df_cur_conf, start_index=0, pattern='Confirmation_'))
+
+for item in items:
+
+    # if item != '1606834943_10':
+    #     continue
+
+    try:
+        # if there is a history on item
+        ddf = df_cur_conf[df_cur_conf['item_index'] == item].join(
+            df_conf.loc[[item], df_conf.columns[1:]], how='left', on='item_index')
+    except:
+        # if item is new in list
+        ddf = df_cur_conf[df_cur_conf['item_index'] == item].join(
+            pd.DataFrame(columns=df_conf.columns[1:], index=[item]), how='left', on='item_index')
+
+#     insert_index = len(df_cur_conf.columns) - 2
+#     ddf.insert(insert_index, 'improved', ddf[ddf.columns[insert_index+1]].apply(
+#         lambda x: x if pd.isna(x) else x.split('_')[0]) <
+#                ddf[ddf.columns[insert_index+3]].apply(lambda x: x if pd.isna(x) else x.split('_')[0]))
+#     ddf.insert(insert_index, 'changed', ddf[ddf.columns[insert_index+2]] != ddf[ddf.columns[insert_index+4]])
+#     ddf.reset_index(inplace = True, drop = True)
+
+#     cur_unchanged = ddf[ddf['changed'] == False].iloc[:,insert_index+4].drop_duplicates().values
+#     prev_unchanged = ddf[ddf['changed'] == False].iloc[:,insert_index+5].drop_duplicates().values
+
+#     ddf.drop(ddf[ddf['changed'] == True & ddf.iloc[:,insert_index+4].isin(cur_unchanged)].index, inplace = True)
+#     ddf.drop(ddf[ddf['changed'] == True & ddf.iloc[:,insert_index+5].isin(prev_unchanged)].index, inplace = True)
+#     ddf.drop_duplicates(ddf.columns[:insert_index+4], inplace = True)
+    ddf = focus_records(ddf)
+
+    if item == items[0]:
+        df_conf_temp = ddf.copy()
+
+    else:
+        df_conf_temp = pd.concat([df_conf_temp, ddf], ignore_index=True)
+
+# df_conf_temp[df_conf_temp['item_index'] == '1606155732_21']
+
+# col_comments = df_conf_temp.pop('Comments')
+# df_conf_temp.insert(insert_index-2,col_comments.name, col_comments)
+# print (df_conf_temp.head())
+
+
+# for test purposes
+with pd.ExcelWriter('Deliveries\\temp.xlsx', mode='w') as writer:
+    df_conf_temp.to_excel(writer, sheet_name='test', index=False)
+print('Debug exit')
+os._exit(0)
+
+df_conf = df_conf_temp
+del (df_conf_temp)
+
+# create grouping rule
+group_col = df.columns.to_list()
+my_dict = dict.fromkeys(group_col, 'max')
+my_dict['Confirmed_Quantity'] = 'sum'
+my_dict
+
+
+def form_output_df(df1, filter_text):
+    print('\n', filter_text)
+
+    if filter_text == filter_PL25:
+
+        print('MARKING orders, created not earlier than 4 weeks ago')
+        print('and requested not later than in 2 weeks from now\n')
+
+        df1['time_window'] = ''
+        df1.loc[df1['Created_on'] > (date.today() - timedelta(weeks=4)).strftime('%Y.%m.%d'), 'time_window'] = \
+            'Too early to ask'
+        df1.loc[df1['Requested_Date'] > (date.today() + timedelta(weeks=2)).strftime('%Y.%m.%d'), 'time_window'] = \
+            'Too early to ask'
+
+        col = ['Status', 'Requester:', 'Customer ID:', 'Created on (dd.mm.yyy)', 'Stock', 'Customer Name:', 'Country',
+               'Order', 'code nr', 'Material', 'Comments', 'qty in order', 'critical Qty', 'TIME_WINDOW']
+
+        df2 = pd.DataFrame(columns=col)
+
+        df2['Customer ID:'] = df1['Sold-To_Party']
+        df2['Created on (dd.mm.yyy)'] = df1['Created_on']
+        df2['Stock'] = 'A101'
+        df2['Customer Name:'] = df1['Sold-To_Party_text']
+        df2['Country'] = 'UA'
+        df2['Order'] = df1['Sales_document']
+        df2['code nr'] = df1['Material']
+        df2['Material'] = df1['Material_text']
+        df2['Comments'] = df1['Comments']
+        df2['qty in order'] = df1['Order_Quantity']
+        df2['critical Qty'] = df1['Order_Quantity'].apply(
+            lambda x: math.ceil(x * 0.2) if x > 12 else x)
+        df2['Status'] = ''
+        df2['TIME_WINDOW'] = df1['time_window']
+        df2['Requester:'] = 'Andrii Demenin'
+
+        df2.sort_values(by='Order', inplace=True)
+
+    elif filter_text == filter_PL40:
+        print('filter orders requested not later than in 6 weeks from now\n')
+        df1 = df1[df1['Requested_Date'] <= (
+            date.today() + timedelta(weeks=6)).strftime('%Y.%m.%d')]
+
+        df_PL_40_Prio, _ = read_in_file(in_file, PL40_Prio_List, header_row=0)
+        df_PL_40_Prio = df_PL_40_Prio[['Item', 'type_of_allocation']]
+        df_PL_40_Prio = df_PL_40_Prio.iloc[:, 1:]
+        df_PL_40_Prio.set_index('Item', drop=True, inplace=True)
+        df1 = df1.join(df_PL_40_Prio, how='left', on='Material')
+        del df_PL_40_Prio
+
+        col = ['Assigner', 'Requester', 'Region (THE MUST)', 'Sold to party', 'Sold to party Name',
+               'Order date (dd/mm/yyyy)', 'Sales order or transfer order to DC', 'Order Lines',
+               'Delivery plant for Sales Order', 'Old requested date (dd/mm/yyyy)',
+               'New requested date  (in CDC A101) (dd/mm/yyyy)', 'Production Line', 'SOP group', 'Production plant',
+               'MATERIAL STATUS/PROCEDURE (IF STANDARD PROCESS PLEASE CONTACT MRP CONTROLLER)',
+               'MRP Controller or Prio List PL40 Crisis Team', 'Code', 'Qty', 'split of line (yes/no) OR certificate order',
+               'Material Description', 'Global customer priority', 'Regional priority', 'Assigner Comments']
+
+        df2 = pd.DataFrame(columns=col)
+
+        df2['Sold to party'] = '01/' + df1['Sold-To_Party']
+        df2['Sold to party Name'] = df1['Sold-To_Party_text']
+        df2['Order date (dd/mm/yyyy)'] = df1['Created_on']
+        df2['Sales order or transfer order to DC'] = df1['Sales_document']
+        df2['Order Lines'] = df1['Sales_Document_Item']
+        df2['Delivery plant for Sales Order'] = 'A101'
+        df2['Old requested date (dd/mm/yyyy)'] = ''
+        df2['New requested date  (in CDC A101) (dd/mm/yyyy)'] = df1['Requested_Date']
+        df2['Production Line'] = ''
+        df2['SOP group'] = ''
+        df2['Production plant'] = ''
+        df2['MATERIAL STATUS/PROCEDURE (IF STANDARD PROCESS PLEASE CONTACT MRP CONTROLLER)'] = df1['type_of_allocation']
+        df2['MRP Controller or Prio List PL40 Crisis Team'] = df1['MRP_Controller']
+        df2['Code'] = df1['Material']
+        df2['Qty'] = df1['Order_Quantity']
+        df2['split of line (yes/no) OR certificate order'] = 'No'
+        df2['Material Description'] = ''
+        df2['Global customer priority'] = ''
+        df2['Regional priority'] = ''
+        df2['Assigner Comments'] = ''  # df1['Comments']
+
+        df2['Assigner'] = 'Andrii Demenin'
+        df2['Requester'] = 'Andrii Demenin'
+        df2['Region (THE MUST)'] = 'EER'
+
+        df2.sort_values(by='Sales order or transfer order to DC', inplace=True)
+
+    elif filter_text == filter_EKE:
+
+        print('MARKING orders, created not earlier than 4 weeks ago')
+        print('and requested not later than in 2 weeks from now\n')
+
+        df1['time_window'] = ''
+        df1.loc[df1['Created_on'] > (date.today() - timedelta(weeks=4)).strftime('%Y.%m.%d'), 'time_window'] = \
+            'Too early to ask'
+        df1.loc[df1['Requested_Date'] > (date.today() + timedelta(weeks=2)).strftime('%Y.%m.%d'), 'time_window'] = \
+            'Too early to ask'
+
+        col = ['Week', 'Requester:', 'Customer ID:', 'Created on (dd.mm.yyy)', 'Stock', 'Customer Name:', 'Country',
+               'Order', 'code nr', 'Material', 'qty in order', 'critical Qty', 'QTY delivered', 'Week', 'Comments',
+               'TIME_WINDOW']
+
+        df2 = pd.DataFrame(columns=col)
+
+        df2['Week'] = ''
+        df2['Customer ID:'] = df1['Sold-To_Party']
+        df2['Requester:'] = 'Andrii Demenin'
+        df2['Created on (dd.mm.yyy)'] = df1['Created_on']
+        df2['Stock'] = 'A101'
+        df2['Customer Name:'] = df1['Sold-To_Party_text']
+        df2['Country'] = 'UA'
+        df2['Order'] = df1['Sales_document']
+        df2['code nr'] = df1['Material']
+        df2['Material'] = df1['Material_text']
+        df2['qty in order'] = df1['Order_Quantity']
+        df2['critical Qty'] = df1['Order_Quantity']
+        df2['QTY delivered'] = ''
+        df2['Week'] = ''
+        df2['Comments'] = ''  # df1['Comments']
+        df2['TIME_WINDOW'] = df1['time_window']
+
+    else:
+        print('filter not confirmed orders, created not earlier than 2 weeks ago')
+        print('and requested not later than in 6 weeks from now\n')
+        df2 = df1[(df1['Requested_Date'] <=
+                  (date.today() + timedelta(weeks=6)).strftime('%Y.%m.%d')) &
+                  (df1['Created_on'] <=
+                  (date.today() - timedelta(weeks=2)).strftime('%Y.%m.%d'))]
+        df2 = df2[['PL', 'Sold-To_Party', 'Sold-To_Party_text', 'Sales_document',
+                   'Customer_Reference', 'Sales_Document_Item', 'Material',
+                   'Material_text', 'MRP_Controller', 'Created_on', 'Requested_Date',
+                   'Confirmed_Date', 'Order_Quantity', 'not_confirmed']]
+    if len(df2) == 0:
+        print("No unconfirmed orders found")
+
+    print(df2.shape[0], " rows filtered\n")
+    return df2
+
+
+df1 = df.groupby('item_index', as_index=False).agg(my_dict)
+df1['not_confirmed'] = df1['Order_Quantity'] - df1['Confirmed_Quantity']
+
+# filter not confirmed lines only
+df1 = df1[df1['not_confirmed'] > 0]
+
+# df1 = df1.merge(df_comments[['Comments']], on =['SO_Mat_index'], how = 'left' )
+# df1['Comments'][df1['Comments'].isna()] = df1['Customer_Reference'][df1['Comments'].isna()]
+
+if len(df1):
+
+    filter_PL25 = 'PL == "25"'
+    filter_PL40 = 'PL == "40"'
+    filter_EKE = 'Material == "080G5300" | Material == "080G5350" | Material == "080G5360" | Material == "080G5400"'
+    # filter_Rest = \
+    # 'PL != "40" & PL != "25" & Material != "080G5300" & Material != "080G5350" & Material != "080G5360" & Material != "080G5400"'
+    filter_Rest = \
+        'PL != "40" & Material != "080G5300" & Material != "080G5350" & Material != "080G5360" & Material != "080G5400"'
+
+    # df_PL25 = df1.query(filter_PL25)
+    df_PL40 = df1.query(filter_PL40)
+    df_EKE = df1.query(filter_EKE)
+    df_Rest = df1.query(filter_Rest)
+
+    print('Total:', df1.shape)
+    # print('df_PL25',df_PL25.shape)
+    print('df_PL40', df_PL40.shape)
+    print('df_EKE', df_EKE.shape)
+    print('df_Rest', df_Rest.shape)
+
+    # df_PL25_out = form_output_df(df_PL25, filter_PL25)
+    df_PL40_out = form_output_df(df_PL40, filter_PL40)
+    df_EKE_out = form_output_df(df_EKE, filter_EKE)
+    df_Rest_out = form_output_df(df_Rest, filter_Rest)
+
+    if df_PL40_out.shape[0] or df_EKE_out.shape[0] or df_Rest_out.shape[0]:
+        with pd.ExcelWriter(out_file, mode='w') as writer:
+            print(out_file, '\n')
+
+        #     print(filter_PL25)
+        #     print("https://danfoss.sharepoint.com/:x:/r/sites/EER-DCS/_layouts/15/Doc.aspx?sourcedoc=%7BCCB24C41-29C8-40DC-BE57-5C6232E8F9C1%7D&file=PL25_urgencies_EER.xlsx&action=default&mobileredirect=true")
+        #     print('\n')
+        #     df_PL25_out.to_excel(writer, sheet_name = filter_PL25, index=False)
+
+            print(filter_PL40)
+            print("https://danfoss.sharepoint.com/:x:/r/sites/DCS-supplyChain-PO/RAC/GPL/_layouts/15/Doc.aspx?sourcedoc=%7B8C3B199A-EB64-4B40-BB5B-8A491279131C%7D&file=PL40%20Prio%20List_Total.xlsx&action=default&mobileredirect=true")
+            print('\n')
+            df_PL40_out.to_excel(writer, sheet_name=filter_PL40, index=False)
+
+            print(filter_EKE)
+            print("https://danfoss-my.sharepoint.com/:x:/r/personal/joanna_izdebska_danfoss_com/_layouts/15/Doc.aspx?sourcedoc=%7B67E88D72-8D5D-4CF3-A1F2-6FA40849F08B%7D&file=EKE_urgencies_EER.xlsx&action=default&mobileredirect=true")
+            print('\n')
+            df_EKE_out.to_excel(writer, sheet_name='filter_EKE', index=False)
+
+            print(filter_Rest)
+            print('\n')
+            df_Rest_out.to_excel(writer, sheet_name='filter_Rest', index=False)
+
+            writer.save()
+    else:
+        print('Nothing to write to file')
+else:
+    print('No not confirmed orders found')
+
+# save changes in delivery dates
+with pd.ExcelWriter(confirmation_file, mode='a', if_sheet_exists='replace') as writer:
+    print(f"Updating {confirmation_file} file, adding {cur_conf_col} sheet\n")
+    df_conf.to_excel(writer, sheet_name=cur_conf_col, index=False)

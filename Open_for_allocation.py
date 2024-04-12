@@ -1,10 +1,7 @@
 import pandas as pd
 import numpy as np
-import math
 
-from datetime import date
-from datetime import datetime
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 
 import os
 from openpyxl import load_workbook
@@ -201,6 +198,8 @@ df_conf, sheets = read_in_file(
     file=confirmation_file['file'], folder=file_folder, header_row=0)
 # print (sheets)
 
+# make WRITE as function with db, mode r/w/a, print msg parameters
+# drop old empty columns from confirmation file 
 if df_conf.size == 0:
     file = os.path.join(file_folder, confirmation_file['file'])
 
@@ -376,11 +375,11 @@ for item in items:
 # print (df_conf_temp.head())
 
 
-# for test purposes
-with pd.ExcelWriter('Deliveries\\temp.xlsx', mode='w') as writer:
-    df_conf_temp.to_excel(writer, sheet_name='test', index=False)
-print('Debug exit')
-os._exit(0)
+# # for test purposes
+# with pd.ExcelWriter('Deliveries\\temp.xlsx', mode='w') as writer:
+#     df_conf_temp.to_excel(writer, sheet_name='test', index=False)
+# print('Debug exit')
+# os._exit(0)
 
 df_conf = df_conf_temp
 del (df_conf_temp)
@@ -392,137 +391,19 @@ my_dict['Confirmed_Quantity'] = 'sum'
 my_dict
 
 
-def form_output_df(df1, filter_text):
-    print('\n', filter_text)
+def form_output_df(df1):
 
-    if filter_text == filter_PL25:
+    print('filter not confirmed orders, created not earlier than 2 weeks ago')
+    print('and requested not later than in 6 weeks from now\n')
+    df2 = df1[(df1['Requested_Date'] <=
+                (date.today() + timedelta(weeks=6)).strftime('%Y.%m.%d')) &
+                (df1['Created_on'] <=
+                (date.today() - timedelta(weeks=2)).strftime('%Y.%m.%d'))]
+    df2 = df2[['PL', 'Sold-To_Party', 'Sold-To_Party_text', 'Sales_document',
+                'Customer_Reference', 'Sales_Document_Item', 'Material',
+                'Material_text', 'MRP_Controller', 'Created_on', 'Requested_Date',
+                'Confirmed_Date', 'Order_Quantity', 'not_confirmed']]
 
-        print('MARKING orders, created not earlier than 4 weeks ago')
-        print('and requested not later than in 2 weeks from now\n')
-
-        df1['time_window'] = ''
-        df1.loc[df1['Created_on'] > (date.today() - timedelta(weeks=4)).strftime('%Y.%m.%d'), 'time_window'] = \
-            'Too early to ask'
-        df1.loc[df1['Requested_Date'] > (date.today() + timedelta(weeks=2)).strftime('%Y.%m.%d'), 'time_window'] = \
-            'Too early to ask'
-
-        col = ['Status', 'Requester:', 'Customer ID:', 'Created on (dd.mm.yyy)', 'Stock', 'Customer Name:', 'Country',
-               'Order', 'code nr', 'Material', 'Comments', 'qty in order', 'critical Qty', 'TIME_WINDOW']
-
-        df2 = pd.DataFrame(columns=col)
-
-        df2['Customer ID:'] = df1['Sold-To_Party']
-        df2['Created on (dd.mm.yyy)'] = df1['Created_on']
-        df2['Stock'] = 'A101'
-        df2['Customer Name:'] = df1['Sold-To_Party_text']
-        df2['Country'] = 'UA'
-        df2['Order'] = df1['Sales_document']
-        df2['code nr'] = df1['Material']
-        df2['Material'] = df1['Material_text']
-        df2['Comments'] = df1['Comments']
-        df2['qty in order'] = df1['Order_Quantity']
-        df2['critical Qty'] = df1['Order_Quantity'].apply(
-            lambda x: math.ceil(x * 0.2) if x > 12 else x)
-        df2['Status'] = ''
-        df2['TIME_WINDOW'] = df1['time_window']
-        df2['Requester:'] = 'Andrii Demenin'
-
-        df2.sort_values(by='Order', inplace=True)
-
-    elif filter_text == filter_PL40:
-        print('filter orders requested not later than in 6 weeks from now\n')
-        df1 = df1[df1['Requested_Date'] <= (
-            date.today() + timedelta(weeks=6)).strftime('%Y.%m.%d')]
-
-        df_PL_40_Prio, _ = read_in_file(in_file, PL40_Prio_List, header_row=0)
-        df_PL_40_Prio = df_PL_40_Prio[['Item', 'type_of_allocation']]
-        df_PL_40_Prio = df_PL_40_Prio.iloc[:, 1:]
-        df_PL_40_Prio.set_index('Item', drop=True, inplace=True)
-        df1 = df1.join(df_PL_40_Prio, how='left', on='Material')
-        del df_PL_40_Prio
-
-        col = ['Assigner', 'Requester', 'Region (THE MUST)', 'Sold to party', 'Sold to party Name',
-               'Order date (dd/mm/yyyy)', 'Sales order or transfer order to DC', 'Order Lines',
-               'Delivery plant for Sales Order', 'Old requested date (dd/mm/yyyy)',
-               'New requested date  (in CDC A101) (dd/mm/yyyy)', 'Production Line', 'SOP group', 'Production plant',
-               'MATERIAL STATUS/PROCEDURE (IF STANDARD PROCESS PLEASE CONTACT MRP CONTROLLER)',
-               'MRP Controller or Prio List PL40 Crisis Team', 'Code', 'Qty', 'split of line (yes/no) OR certificate order',
-               'Material Description', 'Global customer priority', 'Regional priority', 'Assigner Comments']
-
-        df2 = pd.DataFrame(columns=col)
-
-        df2['Sold to party'] = '01/' + df1['Sold-To_Party']
-        df2['Sold to party Name'] = df1['Sold-To_Party_text']
-        df2['Order date (dd/mm/yyyy)'] = df1['Created_on']
-        df2['Sales order or transfer order to DC'] = df1['Sales_document']
-        df2['Order Lines'] = df1['Sales_Document_Item']
-        df2['Delivery plant for Sales Order'] = 'A101'
-        df2['Old requested date (dd/mm/yyyy)'] = ''
-        df2['New requested date  (in CDC A101) (dd/mm/yyyy)'] = df1['Requested_Date']
-        df2['Production Line'] = ''
-        df2['SOP group'] = ''
-        df2['Production plant'] = ''
-        df2['MATERIAL STATUS/PROCEDURE (IF STANDARD PROCESS PLEASE CONTACT MRP CONTROLLER)'] = df1['type_of_allocation']
-        df2['MRP Controller or Prio List PL40 Crisis Team'] = df1['MRP_Controller']
-        df2['Code'] = df1['Material']
-        df2['Qty'] = df1['Order_Quantity']
-        df2['split of line (yes/no) OR certificate order'] = 'No'
-        df2['Material Description'] = ''
-        df2['Global customer priority'] = ''
-        df2['Regional priority'] = ''
-        df2['Assigner Comments'] = ''  # df1['Comments']
-
-        df2['Assigner'] = 'Andrii Demenin'
-        df2['Requester'] = 'Andrii Demenin'
-        df2['Region (THE MUST)'] = 'EER'
-
-        df2.sort_values(by='Sales order or transfer order to DC', inplace=True)
-
-    elif filter_text == filter_EKE:
-
-        print('MARKING orders, created not earlier than 4 weeks ago')
-        print('and requested not later than in 2 weeks from now\n')
-
-        df1['time_window'] = ''
-        df1.loc[df1['Created_on'] > (date.today() - timedelta(weeks=4)).strftime('%Y.%m.%d'), 'time_window'] = \
-            'Too early to ask'
-        df1.loc[df1['Requested_Date'] > (date.today() + timedelta(weeks=2)).strftime('%Y.%m.%d'), 'time_window'] = \
-            'Too early to ask'
-
-        col = ['Week', 'Requester:', 'Customer ID:', 'Created on (dd.mm.yyy)', 'Stock', 'Customer Name:', 'Country',
-               'Order', 'code nr', 'Material', 'qty in order', 'critical Qty', 'QTY delivered', 'Week', 'Comments',
-               'TIME_WINDOW']
-
-        df2 = pd.DataFrame(columns=col)
-
-        df2['Week'] = ''
-        df2['Customer ID:'] = df1['Sold-To_Party']
-        df2['Requester:'] = 'Andrii Demenin'
-        df2['Created on (dd.mm.yyy)'] = df1['Created_on']
-        df2['Stock'] = 'A101'
-        df2['Customer Name:'] = df1['Sold-To_Party_text']
-        df2['Country'] = 'UA'
-        df2['Order'] = df1['Sales_document']
-        df2['code nr'] = df1['Material']
-        df2['Material'] = df1['Material_text']
-        df2['qty in order'] = df1['Order_Quantity']
-        df2['critical Qty'] = df1['Order_Quantity']
-        df2['QTY delivered'] = ''
-        df2['Week'] = ''
-        df2['Comments'] = ''  # df1['Comments']
-        df2['TIME_WINDOW'] = df1['time_window']
-
-    else:
-        print('filter not confirmed orders, created not earlier than 2 weeks ago')
-        print('and requested not later than in 6 weeks from now\n')
-        df2 = df1[(df1['Requested_Date'] <=
-                  (date.today() + timedelta(weeks=6)).strftime('%Y.%m.%d')) &
-                  (df1['Created_on'] <=
-                  (date.today() - timedelta(weeks=2)).strftime('%Y.%m.%d'))]
-        df2 = df2[['PL', 'Sold-To_Party', 'Sold-To_Party_text', 'Sales_document',
-                   'Customer_Reference', 'Sales_Document_Item', 'Material',
-                   'Material_text', 'MRP_Controller', 'Created_on', 'Requested_Date',
-                   'Confirmed_Date', 'Order_Quantity', 'not_confirmed']]
     if len(df2) == 0:
         print("No unconfirmed orders found")
 
@@ -536,58 +417,21 @@ df1['not_confirmed'] = df1['Order_Quantity'] - df1['Confirmed_Quantity']
 # filter not confirmed lines only
 df1 = df1[df1['not_confirmed'] > 0]
 
-# df1 = df1.merge(df_comments[['Comments']], on =['SO_Mat_index'], how = 'left' )
-# df1['Comments'][df1['Comments'].isna()] = df1['Customer_Reference'][df1['Comments'].isna()]
-
 if len(df1):
 
-    filter_PL25 = 'PL == "25"'
-    filter_PL40 = 'PL == "40"'
-    filter_EKE = 'Material == "080G5300" | Material == "080G5350" | Material == "080G5360" | Material == "080G5400"'
     # filter_Rest = \
-    # 'PL != "40" & PL != "25" & Material != "080G5300" & Material != "080G5350" & Material != "080G5360" & Material != "080G5400"'
-    filter_Rest = \
-        'PL != "40" & Material != "080G5300" & Material != "080G5350" & Material != "080G5360" & Material != "080G5400"'
+    #     'PL != "40" & Material != "080G5300" & Material != "080G5350" & Material != "080G5360" & Material != "080G5400"'
 
-    # df_PL25 = df1.query(filter_PL25)
-    df_PL40 = df1.query(filter_PL40)
-    df_EKE = df1.query(filter_EKE)
-    df_Rest = df1.query(filter_Rest)
+    # df_Rest = df1.query(filter_Rest)
 
     print('Total:', df1.shape)
-    # print('df_PL25',df_PL25.shape)
-    print('df_PL40', df_PL40.shape)
-    print('df_EKE', df_EKE.shape)
-    print('df_Rest', df_Rest.shape)
 
-    # df_PL25_out = form_output_df(df_PL25, filter_PL25)
-    df_PL40_out = form_output_df(df_PL40, filter_PL40)
-    df_EKE_out = form_output_df(df_EKE, filter_EKE)
-    df_Rest_out = form_output_df(df_Rest, filter_Rest)
+    df_Rest_out = form_output_df(df1)
 
-    if df_PL40_out.shape[0] or df_EKE_out.shape[0] or df_Rest_out.shape[0]:
+    if df_Rest_out.shape[0]:
         with pd.ExcelWriter(out_file, mode='w') as writer:
             print(out_file, '\n')
-
-        #     print(filter_PL25)
-        #     print("https://danfoss.sharepoint.com/:x:/r/sites/EER-DCS/_layouts/15/Doc.aspx?sourcedoc=%7BCCB24C41-29C8-40DC-BE57-5C6232E8F9C1%7D&file=PL25_urgencies_EER.xlsx&action=default&mobileredirect=true")
-        #     print('\n')
-        #     df_PL25_out.to_excel(writer, sheet_name = filter_PL25, index=False)
-
-            print(filter_PL40)
-            print("https://danfoss.sharepoint.com/:x:/r/sites/DCS-supplyChain-PO/RAC/GPL/_layouts/15/Doc.aspx?sourcedoc=%7B8C3B199A-EB64-4B40-BB5B-8A491279131C%7D&file=PL40%20Prio%20List_Total.xlsx&action=default&mobileredirect=true")
-            print('\n')
-            df_PL40_out.to_excel(writer, sheet_name=filter_PL40, index=False)
-
-            print(filter_EKE)
-            print("https://danfoss-my.sharepoint.com/:x:/r/personal/joanna_izdebska_danfoss_com/_layouts/15/Doc.aspx?sourcedoc=%7B67E88D72-8D5D-4CF3-A1F2-6FA40849F08B%7D&file=EKE_urgencies_EER.xlsx&action=default&mobileredirect=true")
-            print('\n')
-            df_EKE_out.to_excel(writer, sheet_name='filter_EKE', index=False)
-
-            print(filter_Rest)
-            print('\n')
             df_Rest_out.to_excel(writer, sheet_name='filter_Rest', index=False)
-
             writer.save()
     else:
         print('Nothing to write to file')
@@ -595,6 +439,7 @@ else:
     print('No not confirmed orders found')
 
 # save changes in delivery dates
-with pd.ExcelWriter(confirmation_file, mode='a', if_sheet_exists='replace') as writer:
-    print(f"Updating {confirmation_file} file, adding {cur_conf_col} sheet\n")
+with pd.ExcelWriter(os.path.join(file_folder, confirmation_file['file']), mode='a', if_sheet_exists='replace') as writer:
+    print(
+        f"Updating {confirmation_file['file']} file, adding {cur_conf_col} sheet\n")
     df_conf.to_excel(writer, sheet_name=cur_conf_col, index=False)

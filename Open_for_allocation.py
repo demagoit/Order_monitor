@@ -95,14 +95,12 @@ print(sheets)
 df = df.convert_dtypes()
 # drop rows with all N/A values
 df = df.dropna(thresh=len(df.columns))
-# print(df.head())
 
 df_a101 = df_a101.convert_dtypes()
 # drop rows with all N/A values
 df_a101 = df_a101.dropna(thresh=len(df_a101.columns))
 df_a101 = df_a101[['Material', 'Total_Stock']]
 df_a101.set_index('Material', drop=True, inplace=True)
-# print(df_a101.head())
 
 # filtration part
 df = df.drop(['Product_hierarchy', 'Product_hierarchy_text',
@@ -113,7 +111,6 @@ df.insert(1, 'SO_Mat_index', df['Sales_document'] + '_' + df['Material'])
 df.drop(df[df['SD_Document_Category'] != 'Order'].index, inplace=True)
 
 df = df.join(df_a101, on='Material', how='left')
-# print(df.head())
 
 # check changes in confirmation dates
 # drop lines without confirmation date
@@ -198,7 +195,8 @@ df_conf, sheets = read_in_file(
     file=confirmation_file['file'], folder=file_folder, header_row=0)
 # print (sheets)
 
-# make WRITE as function with db, mode r/w/a, print msg parameters
+# TODO multyprocess file read
+# TODO make WRITE as function with db, mode r/w/a, print msg parameters
 # drop old empty columns from confirmation file 
 if df_conf.size == 0:
     file = os.path.join(file_folder, confirmation_file['file'])
@@ -213,6 +211,7 @@ else:
 
     df_conf = df_conf.drop(columns=columns_to_drop(
         df_conf, start_index=1, pattern='Confirmation_'))
+    df_conf.dropna(axis='columns', how='all', inplace=True)
 
 # check if column with current date already exists and replace it
 if cur_conf_col in df_conf.columns:
@@ -237,16 +236,11 @@ def adj_requested_date(date_str):
 
     return parts
 
-# not finished 09.02.24
 def focus_records(df):
     '''mark records of highest focus'''
 
     df_working = df.copy()
-    # before = df_working.shape
     df_working = df_working.drop_duplicates()
-    # after = df_working.shape
-    # if after != before:
-    #     print(before, after, df_working['SO_Mat_index'].drop_duplicates())
 
     insert_index = len(columns_to_drop(
         df_working, start_index=0, pattern='Confirmation_'))
@@ -261,7 +255,7 @@ def focus_records(df):
     df_working['Order_qty'] = df_working[df_working.columns[insert_index]].apply(
         lambda x: int(x.split('/')[1]) if x else 0)
 
-#     if latest confirmation is fully equal to previous date_qty/order_qty
+    # False if latest confirmation is fully equal to previous date_qty/order_qty
     df_working['changed'] = df_working[df_working.columns[insert_index]
                                        ] != df_working[df_working.columns[insert_index+1]]
 
@@ -270,14 +264,16 @@ def focus_records(df):
     unchanged_record = df_working[df_working['changed'] ==
                                   False].iloc[:, insert_index].drop_duplicates().values
     # all current confirmations
-    cur_confirmations = df_working.iloc[:,
-                                        insert_index].drop_duplicates().values
+
+    # cur_confirmations = df_working.iloc[:,
+    #                                     insert_index].drop_duplicates().values
 
     df_working.drop(df_working[df_working['changed'] == True
                                & df_working.iloc[:, insert_index].isin(unchanged_record)].index, inplace=True)
     df_working.drop(df_working[df_working['changed'] == True
                                & df_working.iloc[:, insert_index+1].isin(unchanged_record)].index, inplace=True)
-# if chanded both - dates and qty - select what to keep
+
+    # if chanded both - dates and qty - select what to keep
     if df_working['Order_qty'].max() != df_working['Confirmed_Quantity'].sum():
         x = abs(df_working['Confirmed_Quantity'] -
                 df_working['Prev_conf_qty']).min()
@@ -317,8 +313,24 @@ def focus_records(df):
             | (df_working['Sold-To_Party_text'] == 'LLC "Green Cool"')),
         ['Focus']] += 'UBC_overdue, '
 
+    df_working.loc[
+        (df_working['changed'] == True)
+        & (df_working['improved'] == False)
+        & (df_working['overdue'] == True)
+        & (
+            (df_working['Sold-To_Party_text'] == 'PSC "Ukpostach"')
+            | (df_working['Sold-To_Party_text'] == 'LLC "Green Cool"')),
+        ['Focus']] += 'UBC_changed, '
+    
+    #     All customers
+    df_working.loc[
+        (df_working['Next_delivery'] == False)
+        & (df_working['overdue'] == True)
+        & (df_working['Total_Stock'] > 0),
+        ['Focus']] += 'overdue+available, '
+
     df_working.drop(labels=['Adj_Requested_Date',
-                    'Next_delivery'], axis=1, inplace=True)
+                    'Next_delivery', 'Prev_conf_date', 'Prev_conf_qty'], axis=1, inplace=True)
 
     col = list(df_working.columns)
     col = col[:insert_index] + \
@@ -326,6 +338,7 @@ def focus_records(df):
     df_working = df_working[col]
 
     return df_working
+
 # check confirmation changes
 items = df_cur_conf['item_index'].drop_duplicates().reset_index(drop=True)
 
@@ -334,9 +347,6 @@ insert_index = len(columns_to_drop(
     df_cur_conf, start_index=0, pattern='Confirmation_'))
 
 for item in items:
-
-    # if item != '1606834943_10':
-    #     continue
 
     try:
         # if there is a history on item
@@ -347,19 +357,6 @@ for item in items:
         ddf = df_cur_conf[df_cur_conf['item_index'] == item].join(
             pd.DataFrame(columns=df_conf.columns[1:], index=[item]), how='left', on='item_index')
 
-#     insert_index = len(df_cur_conf.columns) - 2
-#     ddf.insert(insert_index, 'improved', ddf[ddf.columns[insert_index+1]].apply(
-#         lambda x: x if pd.isna(x) else x.split('_')[0]) <
-#                ddf[ddf.columns[insert_index+3]].apply(lambda x: x if pd.isna(x) else x.split('_')[0]))
-#     ddf.insert(insert_index, 'changed', ddf[ddf.columns[insert_index+2]] != ddf[ddf.columns[insert_index+4]])
-#     ddf.reset_index(inplace = True, drop = True)
-
-#     cur_unchanged = ddf[ddf['changed'] == False].iloc[:,insert_index+4].drop_duplicates().values
-#     prev_unchanged = ddf[ddf['changed'] == False].iloc[:,insert_index+5].drop_duplicates().values
-
-#     ddf.drop(ddf[ddf['changed'] == True & ddf.iloc[:,insert_index+4].isin(cur_unchanged)].index, inplace = True)
-#     ddf.drop(ddf[ddf['changed'] == True & ddf.iloc[:,insert_index+5].isin(prev_unchanged)].index, inplace = True)
-#     ddf.drop_duplicates(ddf.columns[:insert_index+4], inplace = True)
     ddf = focus_records(ddf)
 
     if item == items[0]:
@@ -367,12 +364,6 @@ for item in items:
 
     else:
         df_conf_temp = pd.concat([df_conf_temp, ddf], ignore_index=True)
-
-# df_conf_temp[df_conf_temp['item_index'] == '1606155732_21']
-
-# col_comments = df_conf_temp.pop('Comments')
-# df_conf_temp.insert(insert_index-2,col_comments.name, col_comments)
-# print (df_conf_temp.head())
 
 
 # # for test purposes

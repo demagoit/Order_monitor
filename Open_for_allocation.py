@@ -76,6 +76,23 @@ def read_in_file(file: str, folder=file_folder, in_SheetName='', header_row=2):
 
     return df, sheets
 
+def write_out_file(df: pd.DataFrame, file_name: str, file_folder: str = file_folder, mode: str = 'a', sheet_name: str = None, if_sheet_exists: str = 'replace',  print_msg: str = None):
+
+    with pd.ExcelWriter(os.path.join(file_folder, file_name), mode=mode, if_sheet_exists=if_sheet_exists) as writer:
+        if print_msg is None:
+            if mode == 'a':
+                print_msg = f"Updating {file_name} file"
+            else:
+                print_msg = f"Creating {file_name} file"
+        if sheet_name is not None:
+            print_msg += f", adding {sheet_name} sheet"
+
+        print(print_msg, '\n')
+
+        if sheet_name is None:
+            df.to_excel(writer, index=False)
+        else:
+            df.to_excel(writer, sheet_name=cur_conf_col, index=False)
 
 def rename_columns(column_names):
     for item in enumerate(column_names):
@@ -196,15 +213,11 @@ df_conf, sheets = read_in_file(
 # print (sheets)
 
 # TODO multyprocess file read
-# TODO make WRITE as function with db, mode r/w/a, print msg parameters
+# TODO confirmed for last Thursday - out of csope as this already in transit == delivered
 # drop old empty columns from confirmation file 
 if df_conf.size == 0:
-    file = os.path.join(file_folder, confirmation_file['file'])
-
-    with pd.ExcelWriter(file, mode='w') as writer:
-        print(f"Creating new {confirmation_file['file']} file\n")
-        df_cur_conf.to_excel(writer, sheet_name=cur_conf_col, index=False)
-        writer.save()
+    write_out_file(df=df_cur_conf,
+              file_name=confirmation_file['file'], mode='w', sheet_name=cur_conf_col, if_sheet_exists='replace')
 else:
     df_conf.set_index('item_index', drop=True, inplace=True)
 #     df_conf.pop('changed')
@@ -216,11 +229,8 @@ else:
 # check if column with current date already exists and replace it
 if cur_conf_col in df_conf.columns:
     print(
-        f'\ncolumn {cur_conf_col} exists in file {confirmation_file}. Replacing it with new data')
+        f'\ncolumn {cur_conf_col} exists in file {confirmation_file["file"]}. Replacing it with new data')
     df_conf.pop(cur_conf_col)
-
-# print(df_conf.head())
-
 
 def adj_requested_date(date_str):
     '''returns next thursday from given date'''
@@ -280,22 +290,12 @@ def focus_records(df):
         df_working.drop(df_working[abs(
             df_working['Confirmed_Quantity'] - df_working['Prev_conf_qty']) > x].index, inplace=True)
 
-#     df_working.drop_duplicates(df_working.columns[:insert_index+1], inplace = True)
-#     cur_qty = df_working.drop_duplicates(df_working.columns[:insert_index+1])['Confirmed_Quantity'].sum()
-#     prev_qty = df_working.drop_duplicates(df_working.columns[:insert_index].append(df_working.columns[insert_index+1:insert_index+2]))['Prev_conf_qty'].sum()
-
-#     if cur_qty != prev_qty:
-#         df_working['Focus'] += 'QTY_change, '
-
     # orders without previous confirmation are considered 'not changed'
     df_working.loc[df_working.iloc[:, insert_index+1].isnull(),
                    'changed'] = False
 
     df_working['improved'] = df_working['Confirmed_Date'] < df_working['Prev_conf_date']
     df_working.fillna({'improved': True}, inplace=True)
-#     ddf.insert(insert_index, 'improved', ddf[ddf.columns[insert_index+1]].apply(
-#     lambda x: x if pd.isna(x) else x.split('_')[0]) <
-#            ddf[ddf.columns[insert_index+3]].apply(lambda x: x if pd.isna(x) else x.split('_')[0]))
 
     df_working['Adj_Requested_Date'] = df_working['Requested_Date'].apply(
         adj_requested_date)
@@ -420,17 +420,14 @@ if len(df1):
     df_Rest_out = form_output_df(df1)
 
     if df_Rest_out.shape[0]:
-        with pd.ExcelWriter(out_file, mode='w') as writer:
-            print(out_file, '\n')
-            df_Rest_out.to_excel(writer, sheet_name='filter_Rest', index=False)
-            writer.save()
+        write_out_file(
+            df=df_Rest_out, file_name=out_file['file'], mode='w', sheet_name='filter_Rest')
     else:
         print('Nothing to write to file')
 else:
     print('No not confirmed orders found')
 
 # save changes in delivery dates
-with pd.ExcelWriter(os.path.join(file_folder, confirmation_file['file']), mode='a', if_sheet_exists='replace') as writer:
-    print(
-        f"Updating {confirmation_file['file']} file, adding {cur_conf_col} sheet\n")
-    df_conf.to_excel(writer, sheet_name=cur_conf_col, index=False)
+write_out_file(df=df_conf, file_name=confirmation_file['file'],
+          mode='a', sheet_name=cur_conf_col, if_sheet_exists='replace')
+

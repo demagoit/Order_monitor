@@ -10,7 +10,7 @@ file_folder = 'Deliveries'
 
 in_file = {
     # 'file': "Open_orders_test_12.05.2022.xlsx",
-    'file': "Open_orders_test_18.08.2023.xlsx",
+    'file': "Open_orders_report_18.08.2023.xlsx",
     'sheet_name': "Open_orders_A101",
     'stock_sheet': "MBEW_A101",
     # 'stock_sheet': "A101_Stock",
@@ -18,11 +18,11 @@ in_file = {
 }
 
 out_file = {
-    'file': "Open_orders_test_py_out.xlsx"
+    'file': "Not_confirmed_orders.xlsx"
 }
 
 confirmation_file = {
-    'file': "Delivery_confirmations_py_out.xlsx"
+    'file': "Delivery_confirmations.xlsx"
 }
 
 
@@ -78,7 +78,9 @@ def read_in_file(file: str, folder=file_folder, in_SheetName='', header_row=2):
 
 def write_out_file(df: pd.DataFrame, file_name: str, file_folder: str = file_folder, mode: str = 'a', sheet_name: str = None, if_sheet_exists: str = 'replace',  print_msg: str = None):
 
-    with pd.ExcelWriter(os.path.join(file_folder, file_name), mode=mode, if_sheet_exists=if_sheet_exists) as writer:
+    with pd.ExcelWriter(os.path.join(file_folder, file_name), mode=mode) as writer:
+        if mode == 'a':
+            writer._if_sheet_exists = if_sheet_exists
         if print_msg is None:
             if mode == 'a':
                 print_msg = f"Updating {file_name} file"

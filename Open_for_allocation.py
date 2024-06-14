@@ -72,29 +72,42 @@ def read_in_file(file: str, folder=file_folder, in_SheetName='', header_row=2):
 
     except Exception as Err:
         print(Err)
-        os._exit(1)
+        retry = input("Retry y/n?")
+        if retry == "y":
+            read_in_file(file=file, folder=folder, in_SheetName=in_SheetName, header_row=header_row)
+        else:
+            os._exit(1)
 
     return df, sheets
 
 def write_out_file(df: pd.DataFrame, file_name: str, file_folder: str = file_folder, mode: str = 'a', sheet_name: str = None, if_sheet_exists: str = 'replace',  print_msg: str = None):
 
-    with pd.ExcelWriter(os.path.join(file_folder, file_name), mode=mode) as writer:
-        if mode == 'a':
-            writer._if_sheet_exists = if_sheet_exists
-        if print_msg is None:
+    try:
+        with pd.ExcelWriter(os.path.join(file_folder, file_name), mode=mode) as writer:
             if mode == 'a':
-                print_msg = f"Updating {file_name} file"
+                writer._if_sheet_exists = if_sheet_exists
+            if print_msg is None:
+                if mode == 'a':
+                    print_msg = f"Updating {file_name} file"
+                else:
+                    print_msg = f"Creating {file_name} file"
+            if sheet_name is not None:
+                print_msg += f", adding {sheet_name} sheet"
+
+            print(print_msg, '\n')
+
+            if sheet_name is None:
+                df.to_excel(writer, index=False)
             else:
-                print_msg = f"Creating {file_name} file"
-        if sheet_name is not None:
-            print_msg += f", adding {sheet_name} sheet"
-
-        print(print_msg, '\n')
-
-        if sheet_name is None:
-            df.to_excel(writer, index=False)
+                df.to_excel(writer, sheet_name=cur_conf_col, index=False)
+    except Exception as Err:
+        print(Err)
+        retry = input("Retry y/n?")
+        if retry == "y":
+            write_out_file(df=df, file_name=file_name, file_folder=file_folder, mode=mode,
+                           sheet_name=sheet_name, if_sheet_exists=if_sheet_exists,  print_msg=print_msg)
         else:
-            df.to_excel(writer, sheet_name=cur_conf_col, index=False)
+            os._exit(1)
 
 def rename_columns(column_names):
     for item in enumerate(column_names):
@@ -297,6 +310,10 @@ def focus_records(df):
                    'changed'] = False
 
     df_working['improved'] = df_working['Confirmed_Date'] < df_working['Prev_conf_date']
+    # df_working['improved'] = (df_working['Confirmed_Date'] == df_working['Prev_conf_date']) and (
+    #     df_working['Confirmed_Quantity'] > df_working['Prev_conf_qty'])
+    # df_working['improved'] = (df_working['Confirmed_Date'] == df_working['Prev_conf_date']) and (
+    #     df_working['Confirmed_Quantity'] == df_working['Order_qty'])
     df_working.fillna({'improved': True}, inplace=True)
 
     df_working['Adj_Requested_Date'] = df_working['Requested_Date'].apply(
@@ -328,7 +345,8 @@ def focus_records(df):
     df_working.loc[
         (df_working['Next_delivery'] == False)
         & (df_working['overdue'] == True)
-        & (df_working['Total_Stock'] > 0),
+        & (df_working['Total_Stock'] > 0)
+        & (df_working['Adj_Requested_Date'] <= adj_requested_date(date.today())),
         ['Focus']] += 'overdue+available, '
 
     df_working.drop(labels=['Adj_Requested_Date',
@@ -349,7 +367,9 @@ insert_index = len(columns_to_drop(
     df_cur_conf, start_index=0, pattern='Confirmation_'))
 
 for item in items:
-
+    if item == "1607056993_280":
+        # for debugging purposes
+        pass
     try:
         # if there is a history on item
         ddf = df_cur_conf[df_cur_conf['item_index'] == item].join(
